@@ -268,7 +268,7 @@ class WatchWindow(ba.Window):
                                 button_type='square',
                                 color=b_color,
                                 textcolor=b_textcolor,
-                                on_activate_call=self._import_my_replay,
+                                on_activate_call=self._import_replay_press,
                                 text_scale=tscl,
                                 label=ba.Lstr(resource='importText'),
                                 autoselect=True)
