@@ -1,33 +1,17 @@
-# Copyright (c) 2011-2020 Eric Froemling
+# Released under the MIT License. See LICENSE for details.
 #
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-# -----------------------------------------------------------------------------
 """Provides UI functionality for watching replays."""
 
 from __future__ import annotations
 
 import os
 from shutil import copyfile
+from enum import Enum
 from typing import TYPE_CHECKING, cast
 
 import _ba
 import ba
+app = _ba.app
 
 if TYPE_CHECKING:
     from typing import Any, Optional, Tuple, Dict
@@ -36,12 +20,17 @@ if TYPE_CHECKING:
 class WatchWindow(ba.Window):
     """Window for watching replays."""
 
+    class TabID(Enum):
+        """Our available tab types."""
+        MY_REPLAYS = 'my_replays'
+        TEST_TAB = 'test_tab'
+
     def __init__(self,
                  transition: Optional[str] = 'in_right',
                  origin_widget: ba.Widget = None):
         # pylint: disable=too-many-locals
         # pylint: disable=too-many-statements
-        from bastd.ui import tabs
+        from bastd.ui.tabs import TabRow
         ba.set_analytics_screen('Watch Window')
         scale_origin: Optional[Tuple[float, float]]
         if origin_widget is not None:
@@ -66,7 +55,7 @@ class WatchWindow(ba.Window):
         x_inset = 100 if uiscale is ba.UIScale.SMALL else 0
         self._height = (578 if uiscale is ba.UIScale.SMALL else
                         670 if uiscale is ba.UIScale.MEDIUM else 800)
-        self._current_tab: Optional[str] = None
+        self._current_tab: Optional[WatchWindow.TabID] = None
         extra_top = 20 if uiscale is ba.UIScale.SMALL else 0
 
         super().__init__(root_widget=ba.containerwidget(
@@ -99,51 +88,60 @@ class WatchWindow(ba.Window):
                             size=(60, 60),
                             label=ba.charstr(ba.SpecialChar.BACK))
 
+        title_extra_v = (28 if uiscale is ba.UIScale.SMALL else
+                         38 if uiscale is  ba.UIScale.MEDIUM else 38)
         ba.textwidget(parent=self._root_widget,
-                      position=(self._width * 0.5, self._height - 38),
+                      position=(self._width * 0.5,
+                                self._height - title_extra_v),
                       size=(0, 0),
                       color=ba.app.ui.title_color,
-                      scale=1.5,
+                      scale=0.8 if uiscale is ba.UIScale.SMALL else 1.5,
                       h_align='center',
                       v_align='center',
                       text=ba.Lstr(resource=self._r + '.titleText'),
                       maxwidth=400)
 
-        tabs_def = [('my_replays',
-                     ba.Lstr(resource=self._r + '.myReplaysText'))]
+        tabdefs = [
+            (self.TabID.MY_REPLAYS,
+             ba.Lstr(resource=self._r + '.myReplaysText')),
+            # (self.TabID.TEST_TAB, ba.Lstr(value='Testing')),
+        ]
 
         scroll_buffer_h = 130 + 2 * x_inset
         tab_buffer_h = 750 + 2 * x_inset
+        tab_buffer_v = (90 if uiscale is ba.UIScale.SMALL else
+                        125 if uiscale is  ba.UIScale.MEDIUM else 130)
 
-        tbh = 118 if uiscale is ba.UIScale.SMALL else 130
-        self._tab_buttons = tabs.create_tab_buttons(
-            self._root_widget,
-            tabs_def,
-            pos=(tab_buffer_h * 0.5, self._height - tbh),
-            size=(self._width - tab_buffer_h, 50),
-            on_select_call=self._set_tab)
+        self._tab_row = TabRow(self._root_widget,
+                               tabdefs,
+                               pos=(tab_buffer_h * 0.5,
+                                    self._height - tab_buffer_v),
+                               size=(self._width - tab_buffer_h, 50),
+                               on_select_call=self._set_tab)
 
         if ba.app.ui.use_toolbars:
-            ba.widget(edit=self._tab_buttons[tabs_def[-1][0]],
+            first_tab = self._tab_row.tabs[tabdefs[0][0]]
+            last_tab = self._tab_row.tabs[tabdefs[-1][0]]
+            ba.widget(edit=last_tab.button,
                       right_widget=_ba.get_special_widget('party_button'))
             if uiscale is ba.UIScale.SMALL:
                 bbtn = _ba.get_special_widget('back_button')
-                ba.widget(edit=self._tab_buttons[tabs_def[0][0]],
+                ba.widget(edit=first_tab.button,
                           up_widget=bbtn,
                           left_widget=bbtn)
 
         self._scroll_width = self._width - scroll_buffer_h
         self._scroll_height = self._height - 180
 
-        # not actually using a scroll widget anymore; just an image
+        # Not actually using a scroll widget anymore; just an image.
         scroll_left = (self._width - self._scroll_width) * 0.5
-        scroll_bottom = self._height - self._scroll_height - 79 - (
-            42 if uiscale is ba.UIScale.SMALL else 48)
+        scroll_bottom = self._height - self._scroll_height - 79 - 48
         buffer_h = 10
-        buffer_v = 11 if uiscale is ba.UIScale.SMALL else 4
+        buffer_v = 25 if uiscale is ba.UIScale.SMALL else 4
+        buffer_extra_v = 19 if uiscale is ba.UIScale.SMALL else 4
         ba.imagewidget(parent=self._root_widget,
                        position=(scroll_left - buffer_h,
-                                 scroll_bottom - buffer_v),
+                                 scroll_bottom - buffer_v + buffer_extra_v),
                        size=(self._scroll_width + 2 * buffer_h,
                              self._scroll_height + 2 * buffer_v),
                        texture=ba.gettexture('scrollWidget'),
@@ -152,21 +150,21 @@ class WatchWindow(ba.Window):
 
         self._restore_state()
 
-    def _set_tab(self, tab: str) -> None:
+    def _set_tab(self, tab_id: TabID) -> None:
         # pylint: disable=too-many-locals
-        from bastd.ui import tabs
 
-        if self._current_tab == tab:
+        if self._current_tab == tab_id:
             return
-        self._current_tab = tab
+        self._current_tab = tab_id
 
-        # We wanna preserve our current tab between runs.
+        # Preserve our current tab between runs.
         cfg = ba.app.config
-        cfg['Watch Tab'] = tab
+        cfg['Watch Tab'] = tab_id.value
         cfg.commit()
 
         # Update tab colors based on which is selected.
-        tabs.update_tab_button_colors(self._tab_buttons, tab)
+        # tabs.update_tab_button_colors(self._tab_buttons, tab)
+        self._tab_row.update_appearance(tab_id)
 
         if self._tab_container:
             self._tab_container.delete()
@@ -178,11 +176,11 @@ class WatchWindow(ba.Window):
         self._tab_data = {}
 
         uiscale = ba.app.ui.uiscale
-        if tab == 'my_replays':
+        if tab_id is self.TabID.MY_REPLAYS:
             c_width = self._scroll_width
-            c_height = self._scroll_height - 20
-            sub_scroll_height = c_height - (
-                33 if uiscale is ba.UIScale.SMALL else 63)
+            c_extra_height = (- 38 if uiscale is ba.UIScale.SMALL else 20)
+            c_height = self._scroll_height - c_extra_height
+            sub_scroll_height = c_height - 63
             self._my_replays_scroll_width = sub_scroll_width = (
                 680 if uiscale is ba.UIScale.SMALL else 640)
 
@@ -194,8 +192,7 @@ class WatchWindow(ba.Window):
                 background=False,
                 selection_loops_to_parent=True)
 
-            teh = 24 if uiscale is ba.UIScale.SMALL else 0
-            v = c_height - 30 + teh
+            v = c_height - (9 if uiscale is ba.UIScale.SMALL else 30)
             ba.textwidget(parent=cnt,
                           position=(c_width * 0.5, v),
                           color=(0.6, 1.0, 0.6),
@@ -210,20 +207,20 @@ class WatchWindow(ba.Window):
                                      ba.Lstr(resource='replayNameDefaultText'))
                                     ]))
 
-            b_width = 116 if uiscale is ba.UIScale.SMALL else 135
-            b_height = (56 if uiscale is ba.UIScale.SMALL else
-                        68 if uiscale is ba.UIScale.MEDIUM else 85)
-            b_space_extra = (3 if uiscale is ba.UIScale.SMALL else
-                             1 if uiscale is ba.UIScale.MEDIUM else 4)
+            b_width = 140 if uiscale is ba.UIScale.SMALL else 178
+            b_height = (86 if uiscale is ba.UIScale.SMALL else
+                        105 if uiscale is ba.UIScale.MEDIUM else 140)
+            b_space_extra = (0 if uiscale is ba.UIScale.SMALL else
+                             -1 if uiscale is ba.UIScale.MEDIUM else -4)
 
             b_color = (0.6, 0.53, 0.63)
             b_textcolor = (0.75, 0.7, 0.8)
-            btnv = (c_height - (27 if uiscale is ba.UIScale.SMALL else
-                                51 if uiscale is ba.UIScale.MEDIUM else 55) -
+            btnv = (c_height - (28 if uiscale is ba.UIScale.SMALL else
+                                47 if uiscale is ba.UIScale.MEDIUM else 45) -
                     b_height)
-            btnh = 25 if uiscale is ba.UIScale.SMALL else 30
-            smlh = 165 if uiscale is ba.UIScale.SMALL else 188
-            tscl = 0.98 if uiscale is ba.UIScale.SMALL else 1.0
+            btnh = 40 if uiscale is ba.UIScale.SMALL else 40
+            smlh = 190 if uiscale is ba.UIScale.SMALL else 225
+            tscl = 1.0 if uiscale is ba.UIScale.SMALL else 1.2
             self._my_replays_watch_replay_button = btn1 = ba.buttonwidget(
                 parent=cnt,
                 size=(b_width, b_height),
@@ -233,10 +230,9 @@ class WatchWindow(ba.Window):
                 textcolor=b_textcolor,
                 on_activate_call=self._on_my_replay_play_press,
                 text_scale=tscl,
-                label='Watch',
-                # label=ba.Lstr(resource=self._r + '.watchReplayButtonText'),
+                label=ba.Lstr(resource=self._r + '.watchReplayButtonText'),
                 autoselect=True)
-            ba.widget(edit=btn1, up_widget=self._tab_buttons[tab])
+            ba.widget(edit=btn1, up_widget=self._tab_row.tabs[tab_id].button)
             if uiscale is ba.UIScale.SMALL and ba.app.ui.use_toolbars:
                 ba.widget(edit=btn1,
                           left_widget=_ba.get_special_widget('back_button'))
@@ -249,22 +245,8 @@ class WatchWindow(ba.Window):
                             textcolor=b_textcolor,
                             on_activate_call=self._on_my_replay_rename_press,
                             text_scale=tscl,
-                            label='Rename',
-                            # label=ba.Lstr(resource=self._r +
-                            #               '.renameReplayButtonText'),
-                            autoselect=True)
-            btnv -= b_height + b_space_extra
-            ba.buttonwidget(parent=cnt,
-                            size=(b_width, b_height),
-                            position=(btnh, btnv),
-                            button_type='square',
-                            color=b_color,
-                            textcolor=b_textcolor,
-                            on_activate_call=self._duplicate_my_replay,
-                            text_scale=tscl,
-                            label='Duplicate',
-                            # label=ba.Lstr(resource=self._r +
-                            #               '.renameReplayButtonText'),
+                            label=ba.Lstr(resource=self._r +
+                                          '.renameReplayButtonText'),
                             autoselect=True)
             btnv -= b_height + b_space_extra
             ba.buttonwidget(parent=cnt,
@@ -275,43 +257,50 @@ class WatchWindow(ba.Window):
                             textcolor=b_textcolor,
                             on_activate_call=self._on_my_replay_delete_press,
                             text_scale=tscl,
-                            label='Delete',
-                            # label=ba.Lstr(resource=self._r +
-                            #               '.deleteReplayButtonText'),
+                            label=ba.Lstr(resource=self._r +
+                                          '.deleteReplayButtonText'),
                             autoselect=True)
-            btnv -= b_height + b_space_extra
-            ba.buttonwidget(parent=cnt,
-                            size=(b_width, b_height),
-                            position=(btnh, btnv),
-                            button_type='square',
-                            color=b_color,
-                            textcolor=b_textcolor,
-                            on_activate_call=self._import_my_replay,
-                            text_scale=tscl,
-                            label='Import',
-                            # label=ba.Lstr(resource=self._r +
-                            #               '.deleteReplayButtonText'),
-                            autoselect=True)
-
-            btnv -= b_height + b_space_extra
-            ba.buttonwidget(parent=cnt,
-                            size=(b_width, b_height),
-                            position=(btnh, btnv),
-                            button_type='square',
-                            color=b_color,
-                            textcolor=b_textcolor,
-                            on_activate_call=self._export_my_replay,
-                            text_scale=tscl,
-                            label='Export',
-                            # label=ba.Lstr(resource=self._r +
-                            #               '.deleteReplayButtonText'),
-                            autoselect=True)
+            if app.platform == 'android':
+                btnv -= b_height*0.7 + b_space_extra
+                ba.buttonwidget(parent=cnt,
+                                size=(b_width, b_height*0.67),
+                                position=(btnh, btnv),
+                                button_type='square',
+                                color=b_color,
+                                textcolor=b_textcolor,
+                                on_activate_call=self._import_my_replay,
+                                text_scale=tscl,
+                                label=ba.Lstr(resource='importText'),
+                                autoselect=True)
+                btnv -= b_height*0.73 + b_space_extra
+                ba.buttonwidget(parent=cnt,
+                                size=(b_width, b_height*0.67),
+                                position=(btnh, btnv),
+                                button_type='square',
+                                color=b_color,
+                                textcolor=b_textcolor,
+                                on_activate_call=self._export_my_replay,
+                                text_scale=tscl,
+                                label=ba.Lstr(resource='shareText'),
+                                autoselect=True)
+            else:
+                btnv -= b_height + b_space_extra
+                ba.buttonwidget(parent=cnt,
+                                size=(b_width, b_height),
+                                position=(btnh, btnv),
+                                button_type='square',
+                                color=b_color,
+                                textcolor=b_textcolor,
+                                on_activate_call=self._show_my_replays,
+                                text_scale=tscl,
+                                label=ba.Lstr(resource='shareText'),
+                                autoselect=True)
 
             v -= sub_scroll_height + 23
             self._scrollwidget = scrlw = ba.scrollwidget(
                 parent=cnt,
                 position=(smlh, v),
-                size=(sub_scroll_width+42, sub_scroll_height))
+                size=(sub_scroll_width, sub_scroll_height))
             ba.containerwidget(edit=cnt, selected_child=scrlw)
             self._columnwidget = ba.columnwidget(parent=scrlw,
                                                  left_border=10,
@@ -321,8 +310,9 @@ class WatchWindow(ba.Window):
             ba.widget(edit=scrlw,
                       autoselect=True,
                       left_widget=btn1,
-                      up_widget=self._tab_buttons[tab])
-            ba.widget(edit=self._tab_buttons[tab], down_widget=scrlw)
+                      up_widget=self._tab_row.tabs[tab_id].button)
+            ba.widget(edit=self._tab_row.tabs[tab_id].button,
+                      down_widget=scrlw)
 
             self._my_replay_selected = None
             self._refresh_my_replays()
@@ -421,15 +411,16 @@ class WatchWindow(ba.Window):
             new_name_raw = cast(
                 str, ba.textwidget(query=self._my_replay_rename_text))
             new_name = new_name_raw + '.brp'
-            # ignore attempts to change it to what it already is
-            # (or what it looks like to the user)
+
+            # Ignore attempts to change it to what it already is
+            # (or what it looks like to the user).
             if (replay != new_name
                     and self._get_replay_display_name(replay) != new_name_raw):
                 old_name_full = (_ba.get_replays_dir() + '/' +
                                  replay).encode('utf-8')
                 new_name_full = (_ba.get_replays_dir() + '/' +
                                  new_name).encode('utf-8')
-                # false alarm; ba.textwidget can return non-None val
+                # False alarm; ba.textwidget can return non-None val.
                 # pylint: disable=unsupported-membership-test
                 if os.path.exists(new_name_full):
                     ba.playsound(ba.getsound('error'))
@@ -504,7 +495,8 @@ class WatchWindow(ba.Window):
         t_scale = 1.6
         try:
             names = os.listdir(_ba.get_replays_dir())
-            # ignore random other files in there..
+
+            # Ignore random other files in there.
             names = [n for n in names if n.endswith('.brp')]
             names.sort(key=lambda x: x.lower())
         except Exception:
@@ -529,8 +521,9 @@ class WatchWindow(ba.Window):
                 corner_scale=t_scale,
                 maxwidth=(self._my_replays_scroll_width / t_scale) * 0.93)
             if i == 0:
-                ba.widget(edit=txt, up_widget=self._tab_buttons['my_replays'])
-
+                ba.widget(
+                    edit=txt,
+                    up_widget=self._tab_row.tabs[self.TabID.MY_REPLAYS].button)
 
     def _import_replay_press(self) -> None:
         from bastd.ui.fileselector import FileSelectorWindow
@@ -601,76 +594,61 @@ class WatchWindow(ba.Window):
             ba.screenmessage(f'{_}', color=(1, 0, 0))
             ba.playsound(ba.getsound('error'))
 
-    def _duplicate_my_replay(self) -> None:
-        if self._my_replay_selected is None:
-            self._no_replay_selected_error()
-            return
-        replay = self._my_replay_selected
-        dup_id = 1
-        can_be_duplicated = False
-        try:
-            if replay != '__lastReplay.brp':
-                old_name_full = (_ba.get_replays_dir() + '/' + replay)
-                while not can_be_duplicated:
-                    new_name_full = (_ba.get_replays_dir() +
-                                     f'/{replay[:-4]}_{dup_id}.brp')
-                    if os.path.exists(new_name_full):
-                        dup_id += 1
-                    else:
-                        can_be_duplicated = True
-                        copyfile(old_name_full, new_name_full)
-                        self._refresh_my_replays()
-                        ba.playsound(ba.getsound('gunCocking'))
-                        ba.screenmessage(
-                            f"Successfully Duplicated '{replay[:-4]}'",
-                            color=(0, 1, 0))
-            else:
-                ba.playsound(ba.getsound('error'))
-                ba.screenmessage(
-                    "Cannot Duplicate 'Last Game Replay'. Please rename it",
-                    color=(1, 0, 0))
-        except Exception as _:
-            ba.screenmessage(f'{_}', color=(1, 0, 0))
-            ba.playsound(ba.getsound('error'))
+    def _show_my_replays(self) -> None:
+        app = _ba.app
+        _ba.open_dir_externally(app.python_directory_user)
 
     def _save_state(self) -> None:
         try:
             sel = self._root_widget.get_selected_child()
+            selected_tab_ids = [
+                tab_id for tab_id, tab in self._tab_row.tabs.items()
+                if sel == tab.button
+            ]
             if sel == self._back_button:
                 sel_name = 'Back'
-            elif sel in list(self._tab_buttons.values()):
-                sel_name = 'Tab:' + list(self._tab_buttons.keys())[list(
-                    self._tab_buttons.values()).index(sel)]
+            elif selected_tab_ids:
+                assert len(selected_tab_ids) == 1
+                sel_name = f'Tab:{selected_tab_ids[0].value}'
             elif sel == self._tab_container:
                 sel_name = 'TabContainer'
             else:
                 raise ValueError(f'unrecognized selection {sel}')
             ba.app.ui.window_states[self.__class__.__name__] = {
-                'sel_name': sel_name,
-                'tab': self._current_tab
+                'sel_name': sel_name
             }
         except Exception:
             ba.print_exception(f'Error saving state for {self}.')
 
     def _restore_state(self) -> None:
         try:
+            sel: Optional[ba.Widget]
             sel_name = ba.app.ui.window_states.get(self.__class__.__name__,
                                                    {}).get('sel_name')
-            current_tab = ba.app.config.get('Watch Tab')
-            if current_tab is None or current_tab not in self._tab_buttons:
-                current_tab = 'my_replays'
+            assert isinstance(sel_name, (str, type(None)))
+            try:
+                current_tab = ba.enum_by_value(self.TabID,
+                                               ba.app.config.get('Watch Tab'))
+            except ValueError:
+                current_tab = self.TabID.MY_REPLAYS
             self._set_tab(current_tab)
+
             if sel_name == 'Back':
                 sel = self._back_button
             elif sel_name == 'TabContainer':
                 sel = self._tab_container
             elif isinstance(sel_name, str) and sel_name.startswith('Tab:'):
-                sel = self._tab_buttons[sel_name.split(':')[-1]]
+                try:
+                    sel_tab_id = ba.enum_by_value(self.TabID,
+                                                  sel_name.split(':')[-1])
+                except ValueError:
+                    sel_tab_id = self.TabID.MY_REPLAYS
+                sel = self._tab_row.tabs[sel_tab_id].button
             else:
                 if self._tab_container is not None:
                     sel = self._tab_container
                 else:
-                    sel = self._tab_buttons[current_tab]
+                    sel = self._tab_row.tabs[current_tab].button
             ba.containerwidget(edit=self._root_widget, selected_child=sel)
         except Exception:
             ba.print_exception(f'Error restoring state for {self}.')
